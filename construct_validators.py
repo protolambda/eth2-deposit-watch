@@ -65,13 +65,15 @@ print(f"deposit datas root: {deposit_data_list.hash_tree_root().hex()}")
 
 validators = List[Validator, VALIDATOR_REGISTRY_LIMIT]()
 balances = []
-validator_pubkeys = []
-pubkeys = set()
+pub2idx = {}
 
-for index, deposit_data in enumerate(deposit_data_list.readonly_iter()):
+bad_signature_dep_indices = []
+top_up_deposits = []  # (index, top up amount)
+
+for dep_index, deposit_data in enumerate(deposit_data_list.readonly_iter()):
     pubkey = deposit_data.pubkey
     amount = deposit_data.amount
-    if pubkey not in validator_pubkeys:
+    if pubkey not in pub2idx:
         # Verify the deposit signature (proof of possession) which is not checked by the deposit contract
         deposit_message = DepositMessage(
             pubkey=deposit_data.pubkey,
@@ -81,10 +83,11 @@ for index, deposit_data in enumerate(deposit_data_list.readonly_iter()):
         domain = compute_domain(DOMAIN_DEPOSIT)  # Fork-agnostic domain since deposits are valid across forks
         signing_root = compute_signing_root(deposit_message, domain)
         # TODO: super slow
-        # if not bls.Verify(pubkey, signing_root, deposit_data.signature):
-        #     print(f"warning deposit {index} has a wrong signature")
-        #     continue
+        if not bls.Verify(pubkey, signing_root, deposit_data.signature):
+            bad_signature_dep_indices.append(dep_index)
+            continue
 
+        val_index = len(validators)
         # Add validator and balance entries
         validators.append(Validator(
             pubkey=pubkey,
@@ -96,11 +99,12 @@ for index, deposit_data in enumerate(deposit_data_list.readonly_iter()):
             effective_balance=min(amount - amount % EFFECTIVE_BALANCE_INCREMENT, MAX_EFFECTIVE_BALANCE),
         ))
         balances.append(amount)
-        pubkeys.add(pubkey)
+        pub2idx[pubkey] = val_index
     else:
         # Increase balance by deposit amount
-        index = ValidatorIndex(validator_pubkeys.index(pubkey))
+        index = ValidatorIndex(pub2idx[pubkey])
         balances[index] += amount
+        top_up_deposits.append((index, amount))
 
 print("\n\n\n")
 
@@ -108,6 +112,21 @@ for i, val in enumerate(validators.readonly_iter()):
     print(f"Validator {i}, balance {balances[i]}:\n{val}")
 
 print("\n\n\n")
+
+print("-----------")
+print(f"Got {len(bad_signature_dep_indices)} bad deposits")
+
+for i in bad_signature_dep_indices:
+    dep_data = deposit_data_list[i]
+    print(f"BAD signature on deposit #{i}:\n{dep_data}\n{finalized_dep_logs[i]}")
+
+print("-----------")
+print(f"Got {len(top_up_deposits)} top up deposits")
+
+for (i, amount) in top_up_deposits:
+    dep_data = deposit_data_list[i]
+    val_index = pub2idx[dep_data.pubkey]
+    print(f"deposit #{i} topped up validator {val_index} by {amount} gwei")
 
 print("------------")
 print(f"validators set root: {validators.hash_tree_root().hex()}")
