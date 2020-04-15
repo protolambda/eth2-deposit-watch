@@ -31,7 +31,8 @@ print(f"current block #{current_block.number}\n{current_block}")
 current_dep_count = provider.get_deposit_count(current_block.number)
 print(f"current deposit count: {current_dep_count}")
 
-TRUSTED_CONFIRM_DISTANCE = 1024
+# TODO: adjust if safety is needed
+TRUSTED_CONFIRM_DISTANCE = 0
 
 finalized_num = max(DEPOSIT_CONTRACT_DEPLOY_BLOCK, current_block.number-TRUSTED_CONFIRM_DISTANCE)
 
