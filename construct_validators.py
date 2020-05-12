@@ -1,40 +1,18 @@
-import io
-import json
+from eth_typing import BlockNumber
 
-from web3 import Web3
-from eth_typing import Address, BlockNumber
+from eth1_conn import eth1mon
+from settings import DEPOSIT_CONTRACT_DEPLOY_BLOCK
 
-from provider import Web3Eth1DataProvider
-from web3.middleware import geth_poa_middleware  # For Goerli
-
-DEPOSIT_ABI_PATH = "deposit_abi.json"
-ETH1_RPC = "https://goerli.infura.io/v3/caf2e67f3cec4926827e5b4d17dc5167"
-DEPOSIT_CONTRACT_ADDRESS = Address(bytes.fromhex("0x5cA1e00004366Ac85f492887AAab12d0e6418876".replace("0x", "")))
-DEPOSIT_CONTRACT_DEPLOY_BLOCK = 2523557
-
-with io.open("deposit_abi.json", "r") as f:
-    deposit_contract_json = f.read()
-
-deposit_contract_abi = json.loads(deposit_contract_json)["abi"]
-
-
-w3: Web3 = Web3(Web3.HTTPProvider(ETH1_RPC))
-# Handle POA Goerli style "extraData" in Web3
-# inject the poa compatibility middleware to the innermost layer
-w3.middleware_onion.inject(geth_poa_middleware, layer=0)
-
-provider = Web3Eth1DataProvider(w3, DEPOSIT_CONTRACT_ADDRESS, deposit_contract_abi)
-
-current_block = provider.get_block("latest")
+current_block = eth1mon.get_block("latest")
 print(f"current block #{current_block.number}\n{current_block}")
 
-current_dep_count = provider.get_deposit_count(current_block.number)
+current_dep_count = eth1mon.get_deposit_count(current_block.number)
 print(f"current deposit count: {current_dep_count}")
 
 # TODO: adjust if safety is needed
-TRUSTED_CONFIRM_DISTANCE = 0
+TRUSTED_CONFIRM_DISTANCE = 1024
 
-finalized_num = max(DEPOSIT_CONTRACT_DEPLOY_BLOCK, current_block.number-TRUSTED_CONFIRM_DISTANCE)
+finalized_block_num = max(DEPOSIT_CONTRACT_DEPLOY_BLOCK, current_block.number - TRUSTED_CONFIRM_DISTANCE)
 
 CATCH_UP_STEP_SIZE = 1024
 
@@ -42,12 +20,12 @@ finalized_dep_logs = []
 
 curr_dep_count = 0
 # catch up
-for curr_block_num in range(DEPOSIT_CONTRACT_DEPLOY_BLOCK, finalized_num, CATCH_UP_STEP_SIZE):
-    next_block_num = min(curr_block_num+CATCH_UP_STEP_SIZE, finalized_num)
-    next_dep_count = provider.get_deposit_count(BlockNumber(next_block_num))
+for curr_block_num in range(DEPOSIT_CONTRACT_DEPLOY_BLOCK, finalized_block_num, CATCH_UP_STEP_SIZE):
+    next_block_num = min(curr_block_num + CATCH_UP_STEP_SIZE, finalized_block_num)
+    next_dep_count = eth1mon.get_deposit_count(BlockNumber(next_block_num))
     print(f"deposit count {next_dep_count} at block #{next_block_num}")
     if next_dep_count > curr_dep_count:
-        logs = provider.get_logs(BlockNumber(curr_block_num), BlockNumber(next_block_num))
+        logs = eth1mon.get_logs(BlockNumber(curr_block_num), BlockNumber(next_block_num))
         print(f"fetched {len(logs)} logs from block {curr_block_num} to {next_block_num}")
         finalized_dep_logs.extend(logs)
 
@@ -57,6 +35,8 @@ print("\n-----\n".join(f"#{i}:\n{dat}" for i, dat in enumerate(finalized_dep_dat
 
 
 from eth2spec.phase0.spec import *
+
+import milagro_bls_binding as bls
 
 deposit_data_list = List[DepositData, 2**DEPOSIT_CONTRACT_TREE_DEPTH](*finalized_dep_datas)
 
@@ -118,7 +98,7 @@ print(f"Got {len(bad_signature_dep_indices)} bad deposits")
 
 for i in bad_signature_dep_indices:
     dep_data = deposit_data_list[i]
-    print(f"BAD signature on deposit #{i}:\n{dep_data}\n{finalized_dep_logs[i]}")
+    print(f"BAD signature on deposit #{i}, tx: \n{finalized_dep_logs[i].tx_hash.hex()}")
 
 print("-----------")
 print(f"Got {len(top_up_deposits)} top up deposits")

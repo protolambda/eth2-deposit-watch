@@ -1,10 +1,14 @@
-from typing import Any, Dict, NamedTuple, Tuple, Union
+from typing import Any, Dict, NamedTuple, Tuple, Union, Optional
 
 from eth_typing import Address, BlockNumber, Hash32
 from eth_utils import encode_hex, event_abi_to_log_topic
 
 from web3 import Web3
+from web3.eth import Contract
+from web3._utils.filters import LogFilter
+from web3.types import BlockIdentifier
 
+import trio
 from eth2spec.phase0.spec import DepositData, BLSPubkey, BLSSignature, Gwei, uint64, Bytes32
 
 
@@ -19,7 +23,10 @@ class Eth1Block(NamedTuple):
 
 
 class DepositLog(NamedTuple):
+    block_number: BlockNumber
     block_hash: Hash32
+    tx_index: int
+    tx_hash: Hash32
     pubkey: BLSPubkey
     withdrawal_credentials: Bytes32
     amount: Gwei
@@ -29,7 +36,10 @@ class DepositLog(NamedTuple):
     def from_contract_log_dict(cls, log: Dict[Any, Any]) -> "DepositLog":
         log_args = log["args"]
         return cls(
+            block_number=log["blockNumber"],
             block_hash=log["blockHash"],
+            tx_index=log["transactionIndex"],
+            tx_hash=log["transactionHash"],
             pubkey=BLSPubkey(log_args["pubkey"]),
             withdrawal_credentials=Bytes32(log_args["withdrawal_credentials"]),
             amount=Gwei(int.from_bytes(log_args["amount"], "little")),
@@ -45,10 +55,32 @@ class DepositLog(NamedTuple):
         )
 
 
-class Web3Eth1DataProvider(object):
+class DepLogFilterSub(object):
+    log_filt: Optional[LogFilter]
+    _deposit_contract: Contract
+    _block_num_start: BlockIdentifier
+    _block_num_end: BlockIdentifier
+
+    def __init__(self, dep_contract: Contract, start: BlockIdentifier, end: BlockIdentifier):
+        self._deposit_contract = dep_contract
+        self._block_num_start = start
+        self._block_num_end = end
+
+    async def __aenter__(self):
+        self.log_filt = self._deposit_contract.events.DepositEvent().createFilter(
+            fromBlock=self._block_num_start, toBlock=self._block_num_end)
+        print(f"created filter: {self.log_filt.filter_id}")
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        print(f"removing old filter: {self.log_filt.filter_id}")
+        self._deposit_contract.web3.eth.uninstallFilter(self.log_filt.filter_id)
+
+
+class DepositMonitor(object):
     w3: Web3
 
-    _deposit_contract: "Web3.eth.contract"
+    _deposit_contract: Contract
     _deposit_event_abi: Dict[str, Any]
     _deposit_event_topic: str
 
@@ -77,9 +109,23 @@ class Web3Eth1DataProvider(object):
             "address": self._deposit_contract.address,
             "topics": [self._deposit_event_topic],
         })
-        processed_logs = tuple(self._deposit_contract.events.DepositEvent().processLog(log) for log in logs)
+        dep_ev = self._deposit_contract.events.DepositEvent()
+        processed_logs = tuple(dep_ev.processLog(log) for log in logs)
         parsed_logs = tuple(DepositLog.from_contract_log_dict(log) for log in processed_logs)
         return parsed_logs
+
+    async def watch_logs(self, block_num_start: BlockNumber,
+                         poll_interval: float, dest: trio.MemorySendChannel):
+        async with DepLogFilterSub(self._deposit_contract, block_num_start, 'pending') as sub:
+            while True:
+                batch = sub.log_filt.get_new_entries()
+                print(f"processing batch of {len(batch)} entries")
+                for log in batch:
+                    print(f"incoming log: {log}")
+                    dep_log = DepositLog.from_contract_log_dict(log)
+                    print(f"parsed entry: {dep_log}")
+                    await dest.send(dep_log)
+                await trio.sleep(poll_interval)
 
     def get_deposit_count(self, block_number: BlockNumber) -> int:
         deposit_count_bytes = self._deposit_contract.functions.get_deposit_count().call(block_identifier=block_number)

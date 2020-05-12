@@ -1,5 +1,6 @@
 eth_typing>=2.2.1
 eth-utils>=1.8.4
 web3>=5.7.0
-eth2spec>=0.11.1
+eth2spec>=0.11.2
+trio>=0.14.0
 
