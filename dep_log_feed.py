@@ -3,9 +3,10 @@ from typing import Sequence
 from depwatch.eth1_conn import eth1mon
 from depwatch.monitor import DepositLog
 from depwatch.models import Base, DepositTx
-from depwatch.settings import DEPOSIT_CONTRACT_DEPLOY_BLOCK
+from depwatch.settings import DEPOSIT_CONTRACT_DEPLOY_BLOCK, BACKFILL_REPEAT_DISTANCE
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import func
 
 engine = create_engine('sqlite:///foo.db')
 
@@ -19,22 +20,30 @@ async def ev_batch_loop(recv: trio.MemoryReceiveChannel):
     ev_batch: Sequence[DepositLog]
     async for ev_batch in recv:
         print(ev_batch)
-        session.add_all(DepositTx(
-            block_hash=ev.block_hash,
-            tx_index=ev.tx_index,
-            tx_hash=ev.tx_hash,
-            pubkey=ev.pubkey,
-            withdrawal_credentials=ev.withdrawal_credentials,
-            amount=ev.amount,
-            signature=ev.signature,
-        ) for ev in ev_batch)
+        for ev in ev_batch:
+            session.merge(DepositTx(
+                block_hash=ev.block_hash,
+                block_num=ev.block_number,
+                tx_index=ev.tx_index,
+                tx_hash=ev.tx_hash,
+                pubkey=ev.pubkey,
+                withdrawal_credentials=ev.withdrawal_credentials,
+                amount=ev.amount,
+                signature=ev.signature,
+            ))
         session.commit()
 
 
 async def main():
     async with trio.open_nursery() as nursery:
         send, recv = trio.open_memory_channel(max_buffer_size=100)
+
+        # Look for latest existing block, then adjust starting point from there.
         start_block_num = DEPOSIT_CONTRACT_DEPLOY_BLOCK
+        max_block_number_res = session.query(func.max(DepositTx.block_num)).first()[0]
+        if max_block_number_res is not None:
+            start_block_num = max(DEPOSIT_CONTRACT_DEPLOY_BLOCK, max_block_number_res - BACKFILL_REPEAT_DISTANCE)
+
         current_block_num = eth1mon.get_block('latest').number
         print(f"start at block {start_block_num}, backfill up to {current_block_num}")
         nursery.start_soon(eth1mon.backfill_logs, start_block_num, current_block_num, send)

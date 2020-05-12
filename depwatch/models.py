@@ -31,6 +31,8 @@ class Eth1Block(Base):
     block_num = Column(BlockNumber)
     timestamp = Column(Integer)
 
+    deposit_count = Column(Integer)
+
 
 class Eth1Data(Base):
     __tablename__ = 'eth1_data'
@@ -52,6 +54,7 @@ class Eth1BlockVote(Base):
 class DepositTx(Base):
     __tablename__ = 'deposit_tx'
     block_hash = Column(Eth1BlockHash, ForeignKey('eth1_block.block_hash'))
+    block_num = Column(Integer)
     tx_index = Column(Integer)
     tx_hash = Column(TxHash, primary_key=True)
     pubkey = Column(BLSPubkey)

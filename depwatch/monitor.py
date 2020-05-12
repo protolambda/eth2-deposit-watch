@@ -5,7 +5,7 @@ from eth_utils import encode_hex, event_abi_to_log_topic
 
 from web3 import Web3
 from web3.eth import Contract
-from web3._utils.filters import LogFilter
+from web3._utils.filters import LogFilter, BlockFilter
 from web3.types import BlockIdentifier
 
 import trio
@@ -18,8 +18,14 @@ class Timestamp(uint64):
 
 class Eth1Block(NamedTuple):
     block_hash: Hash32
+    parent_hash: Hash32
     number: BlockNumber
     timestamp: Timestamp
+
+
+class EnhancedEth1Block(NamedTuple):
+    eth1_block: Eth1Block
+    deposit_count: int
 
 
 class DepositLog(NamedTuple):
@@ -98,6 +104,7 @@ class DepositMonitor(object):
             raise Exception("block not found")
         return Eth1Block(
             block_hash=Hash32(block_dict["hash"]),
+            parent_hash=block_dict["parentHash"],
             number=BlockNumber(block_dict["number"]),
             timestamp=Timestamp(block_dict["timestamp"]),
         )
@@ -129,7 +136,7 @@ class DepositMonitor(object):
         async with DepLogFilterSub(self._deposit_contract, block_num_start, 'pending') as sub:
             while True:
                 batch = sub.log_filt.get_new_entries()
-                print(f"processing batch of {len(batch)} entries")
+                print(f"processing batch of {len(batch)} deposit log entries")
                 parsed_batch = []
                 for log in batch:
                     print(f"incoming log: {log}")
@@ -142,8 +149,16 @@ class DepositMonitor(object):
     async def backfill_logs(self, from_block: BlockNumber, to_block: BlockNumber,
                             dest: trio.MemorySendChannel, step_slowdown: float = 0.5,
                             step_block_count: int = 1024):
+        """
+        Backfill deposit logs, for the given block range. Send batches (list) of DepositLog to dest.
+        Optionally slow down steps by step_slowdown seconds, ar change the blocks scanned per step.
+        :param from_block: Starting point (inclusive)
+        :param to_block: End point (exclusive)
+        :param dest: A Trio memory channel to send batches (lists) of DepositLog entries to.
+        :param step_slowdown: Sleep the given amount of seconds between steps, to avoid rate-limit/stress.
+        :param step_block_count: The amount of blocks to scan at a time for logs.
+        """
         curr_dep_count = 0
-        # catch up
         for curr_block_num in range(from_block, to_block, step_block_count):
             next_block_num = min(curr_block_num + step_block_count, to_block)
             next_dep_count = self.get_deposit_count(BlockNumber(next_block_num))
@@ -153,6 +168,44 @@ class DepositMonitor(object):
                 print(f"fetched {len(logs)} logs from block {curr_block_num} to {next_block_num}")
                 if len(logs) > 0:
                     await dest.send(logs)
+            await trio.sleep(step_slowdown)
+
+    async def watch_blocks(self, dest: trio.MemorySendChannel, poll_interval: float = 2.0):
+        """
+        Watch for the latest blocks, enhance them to EnhancedEth1Block, and send them to dest.
+        Optionally
+        :param dest: A Trio memory channel to send ehanced block entries to one by one.
+        :param poll_interval: Wait for the given amount of seconds before checking for new entries.
+        """
+        block_filt = self.w3.eth.filter('latest')
+        while True:
+            batch = block_filt.get_new_entries()
+            print(f"processing batch of {len(batch)} block entries")
+            block_hash: Hash32
+            for block_hash in batch:
+                print(f"incoming block: {block_hash}")
+                block = self.get_block(block_hash)
+                dep_count = self.get_deposit_count(block.number)
+                enhanced_eth1_block = EnhancedEth1Block(eth1_block=block, deposit_count=dep_count)
+                print(f"fetched block entry: {enhanced_eth1_block}")
+                await dest.send(enhanced_eth1_block)
+            await trio.sleep(poll_interval)
+
+    async def backfill_blocks(self, from_block: BlockNumber, to_block: BlockNumber,
+                            dest: trio.MemorySendChannel, step_slowdown: float = 0.1):
+        """
+        Backfill eth1 blocks, for the given block range. EnhancedEth1Block are send one by one to dest.
+        Optionally change the step duration.
+        :param from_block: Starting point (inclusive)
+        :param to_block: End point (exclusive)
+        :param dest: A Trio memory channel to send ehanced block entries to one by one.
+        :param step_slowdown: Sleep the given amount of seconds between steps, to avoid rate-limit/stress.
+        """
+        for curr_block_num in range(from_block, to_block):
+            block = self.get_block(curr_block_num)
+            dep_count = self.get_deposit_count(BlockNumber(curr_block_num))
+            enhanced_eth1_block = EnhancedEth1Block(eth1_block=block, deposit_count=dep_count)
+            await dest.send(enhanced_eth1_block)
             await trio.sleep(step_slowdown)
 
     def get_deposit_count(self, block_number: BlockNumber) -> int:
