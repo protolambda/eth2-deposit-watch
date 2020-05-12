@@ -109,3 +109,6 @@ docs/_build
 
 # Output
 validators.txt
+
+# Debug output sqlite databases
+*.db

@@ -44,7 +44,7 @@ class Eth1BlockVote(Base):
     __tablename__ = 'eth1_block_vote'
     beacon_block_root = Column(Root, ForeignKey('beacon_block.block_root'), primary_key=True)
     slot = Column(Slot)
-    voting_period_slot = Column(Slot, ForeignKey('voting_period.start_slot'))
+    voting_period_slot = Column(Slot, ForeignKey('eth1_voting_period.start_slot'))
     eth1_data = Column(Root, ForeignKey('eth1_data.data_root'))
     proposer_index = Column(ValidatorIndex)
 

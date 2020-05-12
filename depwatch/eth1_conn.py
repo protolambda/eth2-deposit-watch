@@ -1,6 +1,7 @@
 import io
 import json
 from eth_typing import Address
+import importlib.resources as pkg_resources
 
 from web3 import Web3
 from web3.middleware import geth_poa_middleware  # For Goerli
@@ -9,8 +10,9 @@ from depwatch.monitor import DepositMonitor
 
 from depwatch.settings import *
 
-with io.open("deposit_abi.json", "r") as f:
-    deposit_contract_json = f.read()
+from depwatch import res
+
+deposit_contract_json = pkg_resources.read_text(res, "deposit_abi.json")
 
 deposit_contract_abi = json.loads(deposit_contract_json)["abi"]
 

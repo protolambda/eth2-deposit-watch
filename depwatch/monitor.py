@@ -151,7 +151,8 @@ class DepositMonitor(object):
             if next_dep_count > curr_dep_count:
                 logs = self.get_logs(BlockNumber(curr_block_num), BlockNumber(next_block_num))
                 print(f"fetched {len(logs)} logs from block {curr_block_num} to {next_block_num}")
-                await dest.send(logs)
+                if len(logs) > 0:
+                    await dest.send(logs)
             await trio.sleep(step_slowdown)
 
     def get_deposit_count(self, block_number: BlockNumber) -> int:
