@@ -3,4 +3,4 @@ eth-utils>=1.8.4
 web3>=5.7.0
 eth2spec>=0.11.2
 trio>=0.14.0
-
+sqlalchemy>=1.3.16
