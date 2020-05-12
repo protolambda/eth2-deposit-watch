@@ -1,7 +1,7 @@
 from eth_typing import BlockNumber
 
-from eth1_conn import eth1mon
-from settings import DEPOSIT_CONTRACT_DEPLOY_BLOCK
+from depwatch.eth1_conn import eth1mon
+from depwatch.settings import DEPOSIT_CONTRACT_DEPLOY_BLOCK
 
 current_block = eth1mon.get_block("latest")
 print(f"current block #{current_block.number}\n{current_block}")

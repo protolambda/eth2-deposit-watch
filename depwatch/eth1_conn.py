@@ -5,9 +5,9 @@ from eth_typing import Address
 from web3 import Web3
 from web3.middleware import geth_poa_middleware  # For Goerli
 
-from monitor import DepositMonitor
+from depwatch.monitor import DepositMonitor
 
-from settings import *
+from depwatch.settings import *
 
 with io.open("deposit_abi.json", "r") as f:
     deposit_contract_json = f.read()

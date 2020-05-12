@@ -32,10 +32,10 @@ class DepositLog(NamedTuple):
     amount: Gwei
     signature: BLSSignature
 
-    @classmethod
-    def from_contract_log_dict(cls, log: Dict[Any, Any]) -> "DepositLog":
+    @staticmethod
+    def from_contract_log_dict(log: Dict[Any, Any]) -> "DepositLog":
         log_args = log["args"]
-        return cls(
+        return DepositLog(
             block_number=log["blockNumber"],
             block_hash=log["blockHash"],
             tx_index=log["transactionIndex"],
@@ -114,18 +114,45 @@ class DepositMonitor(object):
         parsed_logs = tuple(DepositLog.from_contract_log_dict(log) for log in processed_logs)
         return parsed_logs
 
-    async def watch_logs(self, block_num_start: BlockNumber,
-                         poll_interval: float, dest: trio.MemorySendChannel):
+    async def watch_logs(self, block_num_start: BlockNumber, dest: trio.MemorySendChannel,
+                         poll_interval: float = 2.0):
+        """
+        Watches chain, starting from block_num_start, for deposit logs. It watches for pending transactions too.
+        Once mined or changed, a second log will occur to update the eth1 block hash or other data.
+        This function is long-running, and watching stops as soon as the async function is canceled.
+        The underlying web3 filter is automatically uninstalled.
+
+        :param block_num_start: Starting point.
+        :param poll_interval: How often to poll the filter for new entries.
+        :param dest: A Trio memory channel to send batches (lists) of DepositLog entries to.
+        """
         async with DepLogFilterSub(self._deposit_contract, block_num_start, 'pending') as sub:
             while True:
                 batch = sub.log_filt.get_new_entries()
                 print(f"processing batch of {len(batch)} entries")
+                parsed_batch = []
                 for log in batch:
                     print(f"incoming log: {log}")
                     dep_log = DepositLog.from_contract_log_dict(log)
                     print(f"parsed entry: {dep_log}")
-                    await dest.send(dep_log)
+                    parsed_batch.append(dep_log)
+                await dest.send(dep_log)
                 await trio.sleep(poll_interval)
+
+    async def backfill_logs(self, from_block: BlockNumber, to_block: BlockNumber,
+                            dest: trio.MemorySendChannel, step_slowdown: float = 0.5,
+                            step_block_count: int = 1024):
+        curr_dep_count = 0
+        # catch up
+        for curr_block_num in range(from_block, to_block, step_block_count):
+            next_block_num = min(curr_block_num + step_block_count, to_block)
+            next_dep_count = self.get_deposit_count(BlockNumber(next_block_num))
+            print(f"deposit count {next_dep_count} at block #{next_block_num}")
+            if next_dep_count > curr_dep_count:
+                logs = self.get_logs(BlockNumber(curr_block_num), BlockNumber(next_block_num))
+                print(f"fetched {len(logs)} logs from block {curr_block_num} to {next_block_num}")
+                await dest.send(logs)
+            await trio.sleep(step_slowdown)
 
     def get_deposit_count(self, block_number: BlockNumber) -> int:
         deposit_count_bytes = self._deposit_contract.functions.get_deposit_count().call(block_identifier=block_number)

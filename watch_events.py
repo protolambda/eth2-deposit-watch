@@ -1,10 +1,11 @@
 import trio
-from eth1_conn import eth1mon
+from depwatch.eth1_conn import eth1mon
 
 
 async def log_loop(recv: trio.MemoryReceiveChannel):
-    async for ev in recv:
-        print(ev)
+    async for ev_batch in recv:
+        for ev in ev_batch:
+            print(ev)
 
 
 async def main():
