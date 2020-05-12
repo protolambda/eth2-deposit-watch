@@ -97,14 +97,14 @@ print("-----------")
 print(f"Got {len(bad_signature_dep_indices)} bad deposits")
 
 for i in bad_signature_dep_indices:
-    dep_data = deposit_data_list[i]
-    print(f"BAD signature on deposit #{i}, tx: \n{finalized_dep_logs[i].tx_hash.hex()}")
+    dep_data: DepositData = deposit_data_list[i]
+    print(f"BAD signature on deposit #{i}, tx: {finalized_dep_logs[i].tx_hash.hex()}, sig: {dep_data.signature.hex()}")
 
 print("-----------")
 print(f"Got {len(top_up_deposits)} top up deposits")
 
 for (i, amount) in top_up_deposits:
-    dep_data = deposit_data_list[i]
+    dep_data: DepositData = deposit_data_list[i]
     val_index = pub2idx[dep_data.pubkey]
     print(f"deposit #{i} topped up validator {val_index} by {amount} gwei")
 
