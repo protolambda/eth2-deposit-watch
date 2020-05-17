@@ -1,4 +1,3 @@
-import io
 import json
 from eth_typing import Address
 import importlib.resources as pkg_resources
