@@ -53,7 +53,6 @@ class Eth1BlockVote(Base):
     __tablename__ = 'eth1_block_vote'
     beacon_block_root = Column(Root, ForeignKey('beacon_block.block_root'), primary_key=True)
     slot = Column(Slot)
-    voting_period_slot = Column(Slot, ForeignKey('eth1_voting_period.start_slot'))
     eth1_data = Column(Root, ForeignKey('eth1_data.data_root'))
     proposer_index = Column(ValidatorIndex)
 
@@ -76,27 +75,22 @@ class DepositTx(Base):
     data = Column(Root, ForeignKey('deposit_data.data_root'))
 
 
-class Eth1VotingPeriod(Base):
-    __tablename__ = 'eth1_voting_period'
-    start_block_root = Column(Root, primary_key=True)
-    start_slot = Column(Slot)
-    current_data = Column(Root, ForeignKey('eth1_data.data_root'))
-
-
 class Validator(Base):
     __tablename__ = 'validator'
     # the root of the beacon block when the validator was created in the beacon state
     intro_block_root = Column(Root, primary_key=True)
     validator_index = Column(ValidatorIndex, primary_key=True)
+    intro_slot = Column(Slot)
     pubkey = Column(BLSPubkey)
     withdrawal_credentials = Column(Bytes32)
 
 
 class ValidatorStatus(Base):
     __tablename__ = 'validator_status'
+    # Intro of the new status, not necessarily the validator
     intro_block_root = Column(Root, primary_key=True)
+    intro_slot = Column(Slot)
     validator_index = Column(ValidatorIndex, primary_key=True)
-    slot = Column(Slot)
     effective_balance = Column(Gwei)
     slashed = Column(Boolean)
     activation_eligibility_epoch = Column(Epoch)
@@ -125,7 +119,6 @@ class BeaconState(Base):
     eth1_data = Column(Root, ForeignKey('eth1_data.data_root'))
 
     fork = Column(Version, ForeignKey('beacon_fork.current_version'))
-    eth1_voting_period = Column(Root, ForeignKey('eth1_voting_period.start_block_root'))
     eth1_deposit_index = Column(DepositIndex)
 
     validators_root = Column(Root)
@@ -135,13 +128,13 @@ class BeaconState(Base):
     total_slashings = Column(Gwei)
 
     # Attestations
-    previous_epoch_attestations_count = Column(Integer)
-    current_epoch_attestations_count = Column(Integer)
+    prev_epoch_att_count = Column(Integer)
+    curr_epoch_atte_count = Column(Integer)
 
     # Finality
     justification_bits = Column(String)  # Bitvector[JUSTIFICATION_BITS_LENGTH], as literal bits, e.g. "1001"
-    previous_justified_checkpoint = Column(Root, 'checkpoint.checkpoint_root')  # Previous epoch snapshot
-    current_justified_checkpoint = Column(Root, 'checkpoint.checkpoint_root')
+    prev_just_checkpoint = Column(Root, 'checkpoint.checkpoint_root')  # Previous epoch snapshot
+    curr_just_checkpoint = Column(Root, 'checkpoint.checkpoint_root')
     finalized_checkpoint = Column(Root, 'checkpoint.checkpoint_root')
 
 
