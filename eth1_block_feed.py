@@ -47,5 +47,7 @@ async def main():
         nursery.start_soon(ev_batch_loop, recv)
 
 
+# TODO: update CanonEth1Block as chain changes
+
 if __name__ == '__main__':
     trio.run(main)

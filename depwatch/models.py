@@ -24,8 +24,8 @@ Epoch = BigInteger
 ValidatorIndex = BigInteger
 
 
-class CanonBlock(Base):
-    __tablename__ = 'canon_block'
+class CanonEth1Block(Base):
+    __tablename__ = 'canon_eth1_block'
     block_num = Column(BlockNumber, primary_key=True)
     block_hash = Column(Eth1BlockHash, ForeignKey('eth1_block.block_hash'))
 
@@ -107,6 +107,16 @@ class BeaconBlock(Base):
     parent_root = Column(Root, ForeignKey('beacon_block.block_root'))
     state_root = Column(Root, ForeignKey('beacon_state.state_root'))
     body_root = Column(Root)
+    randao_reveal = Column(BLSSignature)
+    graffiti = Column(Bytes32)
+
+
+class SignedBeaconBlock(Base):
+    __tablename__ = 'signed_beacon_block'
+    # Root of the signed container (not the block root!)
+    root = Column(Root, primary_key=True)
+    signature = Column(BLSSignature)
+    block_root = Column(Root, ForeignKey('beacon_block.block_root'))
 
 
 class BeaconState(Base):
@@ -200,8 +210,8 @@ class PendingAttestation(Base):
 class ProposerSlashing(Base):
     __tablename__ = 'proposer_slashing'
     root = Column(Root, primary_key=True)
-    signed_header_1 = Column(BeaconBlock, ForeignKey('beacon_block.block_root'))
-    signed_header_2 = Column(BeaconBlock, ForeignKey('beacon_block.block_root'))
+    signed_header_1 = Column(Root, ForeignKey('signed_beacon_block.root'))
+    signed_header_2 = Column(Root, ForeignKey('signed_beacon_block.root'))
 
 
 class ProposerSlashingInclusion(Base):
@@ -245,7 +255,7 @@ class SignedVoluntaryExit(Base):
     __tablename__ = 'vol_exit'
     root = Column(Root, primary_key=True)
     epoch = Column(Epoch)  # Earliest epoch when voluntary exit can be processed
-    validator_index: ValidatorIndex
+    validator_index = Column(ValidatorIndex)
     signature = Column(BLSSignature)
 
 
