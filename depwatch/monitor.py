@@ -87,16 +87,12 @@ class DepositMonitor(object):
     w3: Web3
 
     _deposit_contract: Contract
-    _deposit_event_abi: Dict[str, Any]
-    _deposit_event_topic: str
 
     def __init__(self, w3: Web3, deposit_contract_address: Address, deposit_contract_abi: Dict[str, Any]) -> None:
         self.w3 = w3
         self._deposit_contract = self.w3.eth.contract(
             address=deposit_contract_address, abi=deposit_contract_abi
         )
-        self._deposit_event_abi = self._deposit_contract.events.DepositEvent._get_event_abi()
-        self._deposit_event_topic = encode_hex(event_abi_to_log_topic(self._deposit_event_abi))
 
     def get_block(self, arg: Union[Hash32, int, str]) -> Eth1Block:
         block_dict = self.w3.eth.getBlock(arg)
@@ -110,14 +106,11 @@ class DepositMonitor(object):
         )
 
     def get_logs(self, block_num_start: BlockNumber, block_num_end: BlockNumber) -> Tuple[DepositLog, ...]:
-        logs = self.w3.eth.getLogs({
-            "fromBlock": block_num_start,
-            "toBlock": block_num_end,
-            "address": self._deposit_contract.address,
-            "topics": [self._deposit_event_topic],
-        })
+        processed_logs = self._deposit_contract.events.DepositEvent.getLogs(
+            fromBlock=block_num_start,
+            toBlock=block_num_end,
+        )
         dep_ev = self._deposit_contract.events.DepositEvent()
-        processed_logs = tuple(dep_ev.processLog(log) for log in logs)
         parsed_logs = tuple(DepositLog.from_contract_log_dict(log) for log in processed_logs)
         return parsed_logs
 
