@@ -1,5 +1,8 @@
 from eth_typing import BlockNumber
 
+from eth2spec.config import config_util
+config_util.config['GENESIS_FORK_VERSION'] = '0x00000113'
+
 from depwatch.eth1_conn import eth1mon
 from depwatch.settings import DEPOSIT_CONTRACT_DEPLOY_BLOCK
 
@@ -10,7 +13,7 @@ current_dep_count = eth1mon.get_deposit_count(current_block.number)
 print(f"current deposit count: {current_dep_count}")
 
 # TODO: adjust if safety is needed
-TRUSTED_CONFIRM_DISTANCE = 1024
+TRUSTED_CONFIRM_DISTANCE = 1
 
 finalized_block_num = max(DEPOSIT_CONTRACT_DEPLOY_BLOCK, current_block.number - TRUSTED_CONFIRM_DISTANCE)
 
@@ -29,6 +32,12 @@ for curr_block_num in range(DEPOSIT_CONTRACT_DEPLOY_BLOCK, finalized_block_num, 
         print(f"fetched {len(logs)} logs from block {curr_block_num} to {next_block_num}")
         finalized_dep_logs.extend(logs)
 
+print("\n=============== deposit logs ===============\n")
+
+print("\n-----\n".join(f"#{i}:\n{log}" for i, log in enumerate(finalized_dep_logs)))
+
+print("\n=============== deposit datas ===============\n")
+
 finalized_dep_datas = [dep_log.to_deposit_data() for dep_log in finalized_dep_logs]
 
 print("\n-----\n".join(f"#{i}:\n{dat}" for i, dat in enumerate(finalized_dep_datas)))
@@ -42,6 +51,7 @@ deposit_data_list = List[DepositData, 2**DEPOSIT_CONTRACT_TREE_DEPTH](*finalized
 
 print(f"deposit datas root: {deposit_data_list.hash_tree_root().hex()}")
 
+print(f"\n\n\nGENESIS_FORK_VERSION: {GENESIS_FORK_VERSION.hex()}\n")
 
 validators = List[Validator, VALIDATOR_REGISTRY_LIMIT]()
 balances = []
@@ -98,7 +108,7 @@ print(f"Got {len(bad_signature_dep_indices)} bad deposits")
 
 for i in bad_signature_dep_indices:
     dep_data: DepositData = deposit_data_list[i]
-    print(f"BAD signature on deposit #{i}, tx: {finalized_dep_logs[i].tx_hash.hex()}, sig: {dep_data.signature.hex()}")
+    print(f"BAD signature on deposit #{i}, tx: {finalized_dep_logs[i].tx_hash.hex()}, pubkey: {dep_data.pubkey.hex()}")
 
 print("-----------")
 print(f"Got {len(top_up_deposits)} top up deposits")
